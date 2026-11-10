@@ -1,0 +1,57 @@
+# Render Blueprint for the Amazon Ads MCP server.
+# Deploy: Render dashboard -> New -> Blueprint -> select this repo.
+# MCP URL after deploy: https://<service-name>.onrender.com/mcp
+# Clients must send: Authorization: Bearer <MCP_INBOUND_TOKEN>
+services:
+  - type: web
+    name: amazon-ads-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter            # free tier sleeps when idle; starter stays up
+    region: frankfurt        # close to the EU Amazon Ads endpoint
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Server (Dockerfile CMD listens on 8000)
+      - key: PORT
+        value: "8000"
+      - key: TRANSPORT
+        value: streamable-http
+      - key: HOST
+        value: 0.0.0.0
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CODE_MODE
+        value: "true"
+      - key: ENABLE_TASKS
+        value: "true"
+
+      # Inbound auth: protects the public URL. Render generates the value;
+      # copy it from the dashboard into your MCP client config.
+      - key: MCP_INBOUND_TOKEN
+        generateValue: true
+
+      # Amazon Ads credentials (direct auth). Read + write access is whatever
+      # the Amazon login behind the refresh token is allowed to do.
+      - key: AUTH_METHOD
+        value: direct
+      - key: AMAZON_AD_API_CLIENT_ID
+        sync: false
+      - key: AMAZON_AD_API_CLIENT_SECRET
+        sync: false
+      - key: AMAZON_AD_API_REFRESH_TOKEN
+        sync: false
+      - key: AMAZON_ADS_REGION
+        value: eu
+      - key: AMAZON_AD_API_PACKAGES
+        value: profiles,accounts-ads-accounts,reporting-version-3,ads-api-v1-all
+
+      # Render's disk is ephemeral: keep tokens in memory, supply the
+      # refresh token via env instead of the on-disk OAuth cache.
+      - key: AMAZON_ADS_TOKEN_PERSIST
+        value: "false"
+
+      # Public URL used for download links. Set to your onrender.com URL.
+      - key: AMAZON_ADS_PUBLIC_BASE_URL
+        sync: false

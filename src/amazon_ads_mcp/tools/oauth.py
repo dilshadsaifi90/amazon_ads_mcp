@@ -58,6 +58,9 @@ class OAuthTools:
         self.client_id = settings.ad_api_client_id
         self.client_secret = settings.ad_api_client_secret
         self.region = settings.amazon_ads_region
+        self.scope = getattr(
+            settings, "oauth_scope", "advertising::campaign_management"
+        )
 
         # Redirect URI resolution order:
         #   1. Explicit OAUTH_REDIRECT_URI setting (required for any
@@ -117,7 +120,7 @@ class OAuthTools:
         base_auth_url = (
             f"https://www.amazon.com/ap/oa"
             f"?client_id={self.client_id}"
-            f"&scope=cpc_advertising:campaign_management"
+            f"&scope={self.scope}"
             f"&response_type=code"
             f"&redirect_uri={self.redirect_uri}"
         )
@@ -632,47 +635,3 @@ class OAuthTools:
                 "message": f"Failed to exchange code: {response.status_code}",
                 "error": sanitize_string(response.text),
             }
-
-
-def register_oauth_tools(mcp, settings: Settings):
-    """Register OAuth tools with the FastMCP server."""
-    oauth = OAuthTools(settings)
-
-    @mcp.tool
-    async def start_oauth_flow(ctx: Context) -> Dict:
-        """
-        Start the OAuth authorization flow for Amazon Ads API.
-
-        Returns an authorization URL that the user should visit to grant access.
-        The server will automatically handle the callback.
-        """
-        return await oauth.start_oauth_flow(ctx)
-
-    @mcp.tool
-    async def check_oauth_status(ctx: Context) -> Dict:
-        """
-        Check the current OAuth authentication status.
-
-        Returns whether the user is authenticated and token information.
-        """
-        return await oauth.check_oauth_status(ctx)
-
-    @mcp.tool
-    async def refresh_oauth_token(ctx: Context) -> Dict:
-        """
-        Manually refresh the OAuth access token.
-
-        This is usually handled automatically, but can be triggered manually if needed.
-        """
-        return await oauth.refresh_access_token(ctx)
-
-    @mcp.tool
-    async def clear_oauth_tokens(ctx: Context) -> Dict:
-        """
-        Clear all stored OAuth tokens and state.
-
-        Use this to reset authentication or switch to a different account.
-        """
-        return await oauth.clear_oauth_tokens(ctx)
-
-    return oauth

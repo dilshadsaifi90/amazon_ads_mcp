@@ -302,6 +302,15 @@ class Settings(BaseSettings):
         alias="OAUTH_REDIRECT_URI",
         description="OAuth Redirect URI for web authentication flow",
     )
+    oauth_scope: str = Field(
+        "advertising::campaign_management",
+        alias="OAUTH_SCOPE",
+        description=(
+            "Login with Amazon authorization scope. LWA clients approved "
+            "before October 2020 may need 'cpc_advertising:campaign_management' "
+            "instead."
+        ),
+    )
 
     # Sampling Configuration (optional, for testing)
     enable_sampling: bool = Field(

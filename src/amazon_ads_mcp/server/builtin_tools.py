@@ -1402,6 +1402,20 @@ async def register_oauth_tools_builtin(server: FastMCP):
         """Clear OAuth tokens."""
         return await oauth.clear_oauth_tokens(ctx)
 
+    @server.tool(
+        name="complete_oauth_flow",
+        description=(
+            "Complete the OAuth flow by manually submitting the authorization "
+            "code and state from Amazon's callback URL. Use this when running "
+            "the server over stdio transport, where there is no HTTP listener "
+            "to automatically catch the /auth/callback redirect from "
+            "start_oauth_flow."
+        ),
+    )
+    async def complete_oauth_flow(code: str, state: str, ctx: Context):
+        """Manually complete the OAuth flow with a code and state."""
+        return await oauth.handle_oauth_callback(code=code, state=state, ctx=ctx)
+
     logger.info("Registered OAuth authentication tools")
 
 

@@ -558,8 +558,13 @@ class AuthenticatedClient(httpx.AsyncClient):
         # 2a) Dynamic region routing for Amazon Ads endpoints based on marketplace/profile
         try:
             p = path or ""
-            # Apply to all Amazon Ads API paths: /v2/, /reporting/, /amc/, etc.
-            if p.startswith("/v2/") or p.startswith("/reporting/") or "/amc/" in p:
+            # Apply to all Amazon Ads API paths: /v2/, /reporting/, /amc/, /adsApi/, etc.
+            if (
+                p.startswith("/v2/")
+                or p.startswith("/reporting/")
+                or p.startswith("/adsApi/")
+                or "/amc/" in p
+            ):
                 # Determine desired region: explicit override header, marketplace mapping, or env
                 hdr = request.headers
                 # Marketplace override removed - deprecated functionality

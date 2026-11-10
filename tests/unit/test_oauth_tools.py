@@ -13,6 +13,7 @@ class DummySettings:
     ad_api_client_secret = "client-secret"
     amazon_ads_region = "na"
     mcp_server_port = 9080
+    oauth_scope = "advertising::campaign_management"
 
 
 class DummyContext:

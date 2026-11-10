@@ -430,3 +430,90 @@ async def test_kuudo_bearer_swap_clears_persisted_tenant_state_before_tool_call(
         ] == await provider.session_api_key_fingerprint(token_b)
     finally:
         reset_all_session_state()
+
+
+def _query_token_env(monkeypatch, token: str, *, enabled: bool) -> None:
+    monkeypatch.delenv("MCP_ALLOW_UNAUTH_HTTP", raising=False)
+    monkeypatch.delenv("MCP_TRUSTED_PROXY_HMAC_SECRET", raising=False)
+    monkeypatch.setenv("MCP_INBOUND_TOKEN", token)
+    if enabled:
+        monkeypatch.setenv("MCP_ALLOW_QUERY_TOKEN", "true")
+    else:
+        monkeypatch.delenv("MCP_ALLOW_QUERY_TOKEN", raising=False)
+
+
+def test_query_token_allowed_when_opted_in(monkeypatch):
+    token = "q" * 40
+    _query_token_env(monkeypatch, token, enabled=True)
+
+    result = authorize_inbound_http(
+        _request(query=f"token={token}"),
+        provider_type="direct",
+        configured_host="0.0.0.0",
+    )
+
+    assert result.allowed is True
+    assert result.reason == "static_query_token"
+    assert result.token_fingerprint == hashlib.sha256(token.encode()).hexdigest()[:8]
+
+
+def test_query_token_ignored_when_not_opted_in(monkeypatch):
+    token = "q" * 40
+    _query_token_env(monkeypatch, token, enabled=False)
+
+    result = authorize_inbound_http(
+        _request(query=f"token={token}"),
+        provider_type="direct",
+        configured_host="0.0.0.0",
+    )
+
+    assert result.allowed is False
+    assert result.reason == "caller_auth_required"
+
+
+@pytest.mark.parametrize("query", ["token=wrong", "token=", "other=x"])
+def test_query_token_rejects_wrong_or_missing_value(monkeypatch, query):
+    _query_token_env(monkeypatch, "q" * 40, enabled=True)
+
+    result = authorize_inbound_http(
+        _request(query=query),
+        provider_type="direct",
+        configured_host="0.0.0.0",
+    )
+
+    assert result.allowed is False
+
+
+def test_header_bearer_still_works_with_query_token_enabled(monkeypatch):
+    token = "q" * 40
+    _query_token_env(monkeypatch, token, enabled=True)
+
+    result = authorize_inbound_http(
+        _request(headers={"Authorization": f"Bearer {token}"}),
+        provider_type="direct",
+        configured_host="0.0.0.0",
+    )
+
+    assert result.reason == "static_bearer"
+
+
+def test_query_token_redacted_in_access_log_records():
+    import logging
+
+    from amazon_ads_mcp.server.inbound_auth import QueryTokenRedactingFilter
+
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("1.2.3.4:5", "POST", "/mcp?a=1&token=supersecret&b=2", "1.1", 200),
+        None,
+    )
+    QueryTokenRedactingFilter().filter(record)
+
+    message = record.getMessage()
+    assert "supersecret" not in message
+    assert "token=***" in message
+    assert "a=1" in message and "b=2" in message

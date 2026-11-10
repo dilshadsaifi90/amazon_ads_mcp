@@ -1,7 +1,10 @@
 # Render Blueprint for the Amazon Ads MCP server.
 # Deploy: Render dashboard -> New -> Blueprint -> select this repo.
 # MCP URL after deploy: https://<service-name>.onrender.com/mcp
-# Clients must send: Authorization: Bearer <MCP_INBOUND_TOKEN>
+# Header-capable clients (Claude Code): Authorization: Bearer <MCP_INBOUND_TOKEN>
+# Claude.ai custom connectors (no headers):
+#   https://<service-name>.onrender.com/mcp?token=<MCP_INBOUND_TOKEN>
+# Treat that URL as a password.
 services:
   - type: web
     name: amazon-ads-mcp
@@ -29,8 +32,15 @@ services:
 
       # Inbound auth: protects the public URL. Render generates the value;
       # copy it from the dashboard into your MCP client config.
+      # Use a URL-safe value (generateValue may emit '+', which a query
+      # string decodes as a space). Generate with:
+      #   python3 -c "import secrets; print(secrets.token_hex(32))"
       - key: MCP_INBOUND_TOKEN
-        generateValue: true
+        sync: false
+      # Also accept the token as ?token=... for clients that cannot send
+      # headers (Claude.ai connectors). Access logs mask the value.
+      - key: MCP_ALLOW_QUERY_TOKEN
+        value: "true"
 
       # Amazon Ads credentials (direct auth). Read + write access is whatever
       # the Amazon login behind the refresh token is allowed to do.

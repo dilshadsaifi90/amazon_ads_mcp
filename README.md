@@ -406,6 +406,11 @@ calling Amazon Ads operations.
 Public HTTP deployments must also configure `MCP_INBOUND_TOKEN` or trusted
 proxy HMAC authorization for MCP callers.
 
+Clients that cannot send an `Authorization` header (e.g. Claude.ai custom
+connectors) can pass the token in the URL when `MCP_ALLOW_QUERY_TOKEN=true`:
+`https://your-host/mcp?token=<MCP_INBOUND_TOKEN>`. The URL then works as a
+credential; uvicorn access logs mask the `token` value.
+
 
 ### Set Your Amazon Ads MCP Packages 
 To activate specific packages, set a comma-separated package list. For a streamlined default with unified Ads API v1 coverage:

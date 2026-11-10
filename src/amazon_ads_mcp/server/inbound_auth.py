@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from ipaddress import ip_address
@@ -31,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 ALLOW_UNAUTH_HTTP_ENV = "MCP_ALLOW_UNAUTH_HTTP"
 INBOUND_TOKEN_ENV = "MCP_INBOUND_TOKEN"
+ALLOW_QUERY_TOKEN_ENV = "MCP_ALLOW_QUERY_TOKEN"
+QUERY_TOKEN_PARAM = "token"
 PROXY_SECRET_ENV = "MCP_TRUSTED_PROXY_HMAC_SECRET"
 PROXY_CALLER_HEADER_ENV = "MCP_TRUSTED_PROXY_CALLER_HEADER"
 PROXY_SIGNATURE_HEADER_ENV = "MCP_TRUSTED_PROXY_SIGNATURE_HEADER"
@@ -126,6 +129,23 @@ def get_static_bearer_token() -> str | None:
     return token
 
 
+def is_query_token_enabled() -> bool:
+    return _truthy(os.getenv(ALLOW_QUERY_TOKEN_ENV))
+
+
+def extract_query_token(request: Request) -> str | None:
+    """Return the ``?token=`` value when query-token auth is opted into.
+
+    For MCP clients that cannot send custom headers (e.g. Claude.ai custom
+    connectors), the static inbound token may be embedded in the server URL.
+    The URL then acts as a credential, so this is opt-in.
+    """
+    if not is_query_token_enabled():
+        return None
+    value = (request.query_params.get(QUERY_TOKEN_PARAM) or "").strip()
+    return value or None
+
+
 def verify_static_bearer(request: Request) -> InboundAuthResult:
     configured_token = get_static_bearer_token()
     if not configured_token:
@@ -139,7 +159,46 @@ def verify_static_bearer(request: Request) -> InboundAuthResult:
             caller_id="static-bearer",
             token_fingerprint=token_fingerprint(bearer),
         )
+    query_token = extract_query_token(request)
+    if query_token and hmac.compare_digest(
+        query_token.encode("utf-8"), configured_token.encode("utf-8")
+    ):
+        return InboundAuthResult(
+            True,
+            "static_query_token",
+            caller_id="static-bearer",
+            token_fingerprint=token_fingerprint(query_token),
+        )
     return InboundAuthResult(False, "static_bearer_invalid")
+
+
+_QUERY_TOKEN_RE = re.compile(r"([?&]" + QUERY_TOKEN_PARAM + r"=)[^&\s\"]+")
+
+
+def redact_query_token(text: str) -> str:
+    return _QUERY_TOKEN_RE.sub(r"\1***", text)
+
+
+class QueryTokenRedactingFilter(logging.Filter):
+    """Mask ``token=`` query values in log records (e.g. uvicorn access log)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = redact_query_token(record.msg)
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                redact_query_token(a) if isinstance(a, str) else a
+                for a in record.args
+            )
+        return True
+
+
+def install_query_token_log_redaction() -> None:
+    """Attach the redacting filter to uvicorn loggers once."""
+    for name in ("uvicorn.access", "uvicorn.error", "uvicorn"):
+        lg = logging.getLogger(name)
+        if not any(isinstance(f, QueryTokenRedactingFilter) for f in lg.filters):
+            lg.addFilter(QueryTokenRedactingFilter())
 
 
 def verify_trusted_proxy_hmac(request: Request) -> InboundAuthResult:
@@ -348,6 +407,8 @@ class InboundHTTPAuthASGIMiddleware:
         self.auth_manager = auth_manager
         self.configured_host = configured_host
         get_static_bearer_token()
+        if is_query_token_enabled():
+            install_query_token_log_redaction()
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if (

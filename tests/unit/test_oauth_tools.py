@@ -8,6 +8,25 @@ from amazon_ads_mcp.tools import oauth as oauth_module
 from amazon_ads_mcp.tools.oauth import OAuthTools
 
 
+@pytest.fixture(autouse=True)
+def _isolate_token_stores(monkeypatch):
+    """Keep OAuthTools from reading the developer's real persisted tokens.
+
+    OAuthTools falls back to the on-disk secure token store and the auth
+    manager when the context has no tokens. Without this, a machine with a
+    real ``tokens.enc`` makes "no token" tests see an authenticated user.
+    Tests that need a store patch these again; the later patch wins.
+    """
+    from amazon_ads_mcp.auth import manager, secure_token_store
+
+    empty_store = MagicMock()
+    empty_store.get_token.return_value = None
+    monkeypatch.setattr(
+        secure_token_store, "get_secure_token_store", lambda: empty_store
+    )
+    monkeypatch.setattr(manager, "get_auth_manager", lambda: None)
+
+
 class DummySettings:
     ad_api_client_id = "client-id"
     ad_api_client_secret = "client-secret"
